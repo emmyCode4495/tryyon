@@ -1,18 +1,30 @@
 {
   "name": "tryyON",
   "short_name": "tryyON",
-  "description": "Virtual try-on — snapshots, clips & live mirror",
+  "description": "Virtual try-on \u2014 snapshots, clips & live mirror",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#fafaf9",
-  "theme_color": "#0c0a09",
+  "background_color": "#f5f6fa",
+  "theme_color": "#0b0e2b",
   "orientation": "portrait-primary",
   "icons": [
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

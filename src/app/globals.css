@@ -1,60 +1,469 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+/* ------------------------------------------------------------------ */
+/*  Design tokens                                                      */
+/*  Fitting-room palette: mirror grey, denim ink, chalk blue, thread   */
+/* ------------------------------------------------------------------ */
 
-  --color-brand-50: #fdf2f8;
-  --color-brand-100: #fce7f3;
-  --color-brand-200: #fbcfe8;
-  --color-brand-300: #f9a8d4;
-  --color-brand-400: #f472b6;
-  --color-brand-500: #ec4899;
-  --color-brand-600: #db2777;
-  --color-brand-700: #be185d;
-  --color-brand-800: #9d174d;
-  --color-brand-900: #831843;
-
-  --color-surface-50: #fafaf9;
-  --color-surface-100: #f5f5f4;
-  --color-surface-200: #e7e5e4;
-  --color-surface-300: #d6d3d1;
-  --color-surface-400: #a8a29e;
-  --color-surface-500: #78716c;
-  --color-surface-600: #57534e;
-  --color-surface-700: #44403c;
-  --color-surface-800: #292524;
-  --color-surface-900: #1c1917;
-  --color-surface-950: #0c0a09;
+@theme inline {
+  --font-sans: var(--nf-body), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--nf-display), ui-sans-serif, system-ui, sans-serif;
 }
 
-* {
-  -webkit-tap-highlight-color: transparent;
+@theme static {
+  --color-ink-50: #f5f6fa;
+  --color-ink-100: #eceef6;
+  --color-ink-200: #dde0ee;
+  --color-ink-300: #bfc3dd;
+  --color-ink-400: #9499c2;
+  --color-ink-500: #6b71a3;
+  --color-ink-600: #4a5088;
+  --color-ink-700: #2e3875;
+  --color-ink-800: #1b2260;
+  --color-ink-900: #131845;
+  --color-ink-950: #0b0e2b;
+
+  --color-chalk-300: #a4aeff;
+  --color-chalk-400: #7a88ff;
+  --color-chalk-500: #4c5cff;
+  --color-chalk-600: #3544e8;
+  --color-chalk-700: #2a36c2;
+
+  --color-thread-400: #ffd25e;
+  --color-thread-500: #ffc83d;
+  --color-thread-600: #e9a900;
 }
 
-body {
-  font-family: var(--font-sans);
-  background-color: var(--color-surface-50);
-  color: var(--color-surface-900);
-  antialiased: true;
+:root {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-curtain: cubic-bezier(0.7, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.btn-primary {
-  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+/* ------------------------------------------------------------------ */
+/*  Base                                                               */
+/* ------------------------------------------------------------------ */
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 5.5rem;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-ink-50);
+    color: var(--color-ink-900);
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--color-chalk-500);
+    color: #fff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-chalk-500);
+    outline-offset: 3px;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
 }
 
-.btn-primary:active {
-  transform: scale(0.98);
+/* ------------------------------------------------------------------ */
+/*  Components                                                         */
+/* ------------------------------------------------------------------ */
+
+@layer components {
+  /* Arched mirror / doorway silhouette. Pair with aspect-[3/4]. */
+  .arch {
+    border-radius: 50% 50% var(--r, 28px) var(--r, 28px) / 37% 37% var(--r, 28px) var(--r, 28px);
+  }
+
+  /* Swing-tag silhouette used for the garment drop zone */
+  .tag {
+    border-radius: 22px;
+  }
+
+  /* ---------- Header ---------- */
+  .site-header {
+    background: color-mix(in srgb, var(--color-ink-50) 78%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    backdrop-filter: blur(18px) saturate(1.4);
+    transition: box-shadow 0.3s ease;
+  }
+  .site-header[data-stuck="true"] {
+    box-shadow: 0 12px 30px -24px rgba(19, 24, 69, 0.55);
+  }
+
+  .nav-pill {
+    transition:
+      transform 0.45s var(--ease-out),
+      width 0.45s var(--ease-out),
+      opacity 0.25s ease;
+  }
+
+  /* Measuring tape: ticks every 8px, longer mark every 40px.
+     --p (0–1) is the scroll progress, written from JS. */
+  .tape {
+    position: relative;
+    height: 10px;
+    overflow: hidden;
+    background-image:
+      linear-gradient(90deg, var(--color-ink-300) 1px, transparent 1px),
+      linear-gradient(90deg, var(--color-ink-400) 1px, transparent 1px);
+    background-size:
+      8px 4px,
+      40px 9px;
+    background-position:
+      left bottom,
+      left bottom;
+    background-repeat: repeat-x;
+  }
+  .tape-fill {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--color-chalk-500);
+    transform-origin: left;
+    transform: scaleX(var(--p, 0));
+  }
+  .tape-mark {
+    position: absolute;
+    bottom: 0;
+    left: calc(var(--p, 0) * 100%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 8px solid var(--color-chalk-500);
+    transform: translateX(-50%);
+  }
+
+  .credit-delta {
+    animation: delta-pop 1.7s var(--ease-out) both;
+  }
+
+  /* Height-animating disclosure (mobile menu, result actions) */
+  .collapse-y {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows 0.6s var(--ease-out),
+      opacity 0.4s ease;
+  }
+  .collapse-y[data-open="true"] {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+  .collapse-y > * {
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* ---------- Hero: page-load sequence ---------- */
+  .line {
+    display: block;
+    overflow: hidden;
+    padding-bottom: 0.12em;
+    margin-bottom: -0.12em;
+  }
+  .line > span {
+    display: inline-block;
+    animation: line-up 1.1s var(--ease-out) var(--d, 0s) both;
+  }
+  .rise {
+    animation: rise 0.9s var(--ease-out) var(--d, 0s) both;
+  }
+
+  /* ---------- Mirror ---------- */
+  .mirror-tilt {
+    transform: perspective(1100px) rotateY(calc((var(--mx, 0.5) - 0.5) * 9deg))
+      rotateX(calc((0.5 - var(--my, 0.5)) * 7deg));
+    transition: transform 0.6s var(--ease-out);
+    will-change: transform;
+  }
+  .mirror-frame {
+    background: linear-gradient(160deg, var(--color-ink-800), var(--color-ink-950));
+    box-shadow:
+      0 40px 80px -30px rgba(19, 24, 69, 0.55),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+  .mirror-frame--light {
+    background: linear-gradient(160deg, #ffffff, var(--color-ink-200));
+    box-shadow:
+      0 40px 90px -30px rgba(0, 0, 0, 0.75),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  }
+  .mirror-glass {
+    background: linear-gradient(180deg, var(--color-ink-50) 0%, var(--color-ink-200) 100%);
+    isolation: isolate;
+  }
+  /* Reflection streak that slides with the pointer */
+  .mirror-glass::after {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    z-index: 5;
+    pointer-events: none;
+    background: linear-gradient(
+      105deg,
+      transparent 38%,
+      rgba(255, 255, 255, 0.5) 48%,
+      rgba(255, 255, 255, 0.12) 56%,
+      transparent 64%
+    );
+    transform: translateX(calc((var(--mx, 0.5) - 0.5) * 40%));
+    transition: transform 0.6s var(--ease-out);
+  }
+
+  /* Garment cycle: each layer is revealed top-to-bottom by the scan line */
+  .garment {
+    position: absolute;
+    inset: 0;
+    animation: garment-cycle 12s linear infinite both;
+  }
+  .garment-1 { animation-delay: 0s; }
+  .garment-2 { animation-delay: 4s; }
+  .garment-3 { animation-delay: 8s; }
+
+  .scan {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    transform: translateY(-100%);
+    animation: scan-sweep 4s linear infinite;
+  }
+  .scan::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 70px;
+    background: linear-gradient(to bottom, transparent, rgba(76, 92, 255, 0.2));
+  }
+  .scan::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--color-chalk-500);
+    box-shadow: 0 0 18px 4px rgba(76, 92, 255, 0.55);
+  }
+
+  .chip {
+    animation: chip-cycle 12s ease infinite both;
+  }
+  .chip-1 { animation-delay: 0s; }
+  .chip-2 { animation-delay: 4s; }
+  .chip-3 { animation-delay: 8s; }
+
+  /* ---------- Studio ---------- */
+  /* Cutting-mat grid behind the try-on tool */
+  .studio-mat::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size:
+      160px 160px,
+      160px 160px,
+      32px 32px,
+      32px 32px;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 40%, #000 35%, transparent 85%);
+    mask-image: radial-gradient(ellipse at 50% 40%, #000 35%, transparent 85%);
+  }
+
+  .upload-preview {
+    animation: pop-in 0.6s var(--ease-out) both;
+  }
+
+  /* Fitting-room curtains */
+  .curtain {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+    width: 50.5%;
+    background-color: var(--color-ink-800);
+    background-image: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.08),
+      rgba(0, 0, 0, 0.24) 55%,
+      rgba(255, 255, 255, 0.08)
+    );
+    background-size: 34px 100%;
+    transition: transform 0.85s var(--ease-curtain);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.35);
+  }
+  .curtain-l { left: 0; transform: translateX(-101%); }
+  .curtain-r { right: 0; transform: translateX(101%); }
+  .curtain.is-closed { transform: translateX(0); }
+
+  .result-img {
+    animation: settle 1.5s var(--ease-out) both;
+  }
+
+  .gen-fill {
+    animation-name: gen-fill;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+  }
+
+  /* ---------- How it works ---------- */
+  .thread {
+    position: absolute;
+    pointer-events: none;
+  }
+  .thread-h {
+    left: 28px;
+    right: 0;
+    top: 27px;
+    border-top: 2px dashed var(--color-chalk-400);
+    clip-path: inset(0 100% 0 0);
+    transition: clip-path 1.8s var(--ease-out) 0.2s;
+    -webkit-mask-image: linear-gradient(90deg, #000 80%, transparent);
+    mask-image: linear-gradient(90deg, #000 80%, transparent);
+  }
+  .thread-v {
+    left: 27px;
+    top: 28px;
+    bottom: 28px;
+    border-left: 2px dashed var(--color-chalk-400);
+    clip-path: inset(0 0 100% 0);
+    transition: clip-path 1.8s var(--ease-out) 0.2s;
+  }
+  .steps[data-in="true"] .thread-h { clip-path: inset(0 0 0 0); }
+  .steps[data-in="true"] .thread-v { clip-path: inset(0 0 0 0); }
+
+  .step-node {
+    background: var(--color-ink-50);
+    color: var(--color-ink-400);
+    border: 2px solid var(--color-ink-300);
+    transform: scale(0.86);
+    transition:
+      background-color 0.5s ease var(--d, 0s),
+      color 0.5s ease var(--d, 0s),
+      border-color 0.5s ease var(--d, 0s),
+      transform 0.7s var(--ease-spring) var(--d, 0s);
+  }
+  .steps[data-in="true"] .step-node {
+    background: var(--color-chalk-500);
+    color: #fff;
+    border-color: var(--color-chalk-500);
+    transform: scale(1);
+  }
+
+  /* ---------- Misc ---------- */
+  .link-u {
+    background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat;
+    transition: background-size 0.3s var(--ease-out), color 0.2s ease;
+  }
+  .link-u:hover {
+    background-size: 100% 1px;
+  }
 }
 
-.credit-badge {
-  background: linear-gradient(135deg, #1c1917 0%, #292524 100%);
+/* ------------------------------------------------------------------ */
+/*  Keyframes                                                          */
+/* ------------------------------------------------------------------ */
+
+@keyframes line-up {
+  from { transform: translateY(105%); }
+  to { transform: none; }
 }
 
-.upload-zone {
-  transition: all 0.2s ease;
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
 }
 
-.upload-zone.dragover {
-  border-color: #ec4899;
-  background-color: #fdf2f8;
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(1.08); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes settle {
+  from { transform: scale(1.1); filter: blur(6px); }
+  to { transform: none; filter: none; }
+}
+
+@keyframes gen-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes delta-pop {
+  0% { opacity: 0; transform: translateY(-6px) scale(0.8); }
+  14% { opacity: 1; transform: translateY(0) scale(1); }
+  80% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(8px) scale(0.96); }
+}
+
+/* 12s cycle per garment: revealed top→bottom in the first 12%,
+   held, then faded just as the next garment begins. */
+@keyframes garment-cycle {
+  0% { opacity: 1; clip-path: inset(0 0 100% 0); }
+  12% { opacity: 1; clip-path: inset(0 0 0 0); }
+  30% { opacity: 1; clip-path: inset(0 0 0 0); }
+  33% { opacity: 0; clip-path: inset(0 0 0 0); }
+  33.1%, 100% { opacity: 0; clip-path: inset(0 0 100% 0); }
+}
+
+/* 4s sweep, matched to the garment reveal (12% of 12s = 36% of 4s) */
+@keyframes scan-sweep {
+  0% { transform: translateY(-100%); opacity: 1; }
+  36% { transform: translateY(0); opacity: 1; }
+  40% { transform: translateY(0); opacity: 0; }
+  100% { transform: translateY(-100%); opacity: 0; }
+}
+
+@keyframes chip-cycle {
+  0% { opacity: 0; transform: translateY(8px); }
+  6%, 30% { opacity: 1; transform: none; }
+  33%, 100% { opacity: 0; transform: translateY(-6px); }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reduced motion                                                     */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+
+  /* Show a single, still garment instead of the cycling demo */
+  .garment, .scan, .chip { animation: none !important; }
+  .garment { opacity: 0; clip-path: none; }
+  .garment-1 { opacity: 1; }
+  .scan { display: none; }
+  .chip { opacity: 0; }
+  .chip-1 { opacity: 1; }
+}
+
+@media (hover: none) {
+  .mirror-tilt { transform: none; }
 }

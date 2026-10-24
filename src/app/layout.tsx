@@ -1,10 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Bricolage_Grotesque, Instrument_Sans } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({
+const display = Bricolage_Grotesque({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--nf-display",
+  display: "swap",
+});
+
+const body = Instrument_Sans({
+  subsets: ["latin"],
+  variable: "--nf-body",
   display: "swap",
 });
 
@@ -19,12 +25,12 @@ export const metadata: Metadata = {
   },
 };
 
+// Pinch-zoom is intentionally left enabled (the old config disabled it,
+// which fails accessibility guidelines).
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: "#0c0a09",
+  themeColor: "#0b0e2b",
 };
 
 export default function RootLayout({
@@ -34,7 +40,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${display.variable} ${body.variable} font-sans antialiased`}>
         {children}
       </body>
     </html>
