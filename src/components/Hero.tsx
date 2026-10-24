@@ -31,7 +31,7 @@ export default function Hero() {
             style={cssVars({ "--d": "0.62s" })}
           >
             <a
-              href="#try-on"
+              href="/signup"
               className="inline-flex h-13 items-center justify-center rounded-full bg-chalk-500 px-8 text-base font-semibold text-white shadow-[0_14px_32px_-12px_rgba(76,92,255,0.85)] transition duration-300 hover:-translate-y-0.5 hover:bg-chalk-600 active:translate-y-0 active:scale-[0.98]"
             >
               Start a try-on

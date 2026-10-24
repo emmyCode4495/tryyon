@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Logo from "./Logo";
 import { useAnimatedNumber } from "@/hooks/useAnimatedNumber";
 import { cssVars } from "@/lib/css";
+import { createClient } from "@/lib/supabase/client";
 
 const NAV = [
   { id: "try-on", label: "Try on" },
@@ -12,19 +15,24 @@ const NAV = [
   { id: "for-brands", label: "For brands" },
 ] as const;
 
-interface HeaderProps {
-  credits: number;
-}
-
 /** Credit wallet: the number rolls to its new value and a chip shows the change. */
-function CreditsPill({ credits }: { credits: number }) {
-  const shown = useAnimatedNumber(credits);
-  const [prev, setPrev] = useState(credits);
+function CreditsPill({
+  credits,
+  loading,
+  onClick,
+}: {
+  credits: number | null;
+  loading?: boolean;
+  onClick?: () => void;
+}) {
+  const value = credits ?? 0;
+  const shown = useAnimatedNumber(value);
+  const [prev, setPrev] = useState(value);
   const [delta, setDelta] = useState<{ id: number; amount: number } | null>(null);
 
-  if (credits !== prev) {
-    setPrev(credits);
-    setDelta((d) => ({ id: (d?.id ?? 0) + 1, amount: credits - prev }));
+  if (value !== prev) {
+    setPrev(value);
+    setDelta((d) => ({ id: (d?.id ?? 0) + 1, amount: value - prev }));
   }
 
   useEffect(() => {
@@ -34,20 +42,22 @@ function CreditsPill({ credits }: { credits: number }) {
   }, [delta]);
 
   return (
-    <div
-      className="relative flex items-center gap-2 rounded-full bg-ink-900 py-1.5 pl-1.5 pr-3.5 text-sm font-medium text-white"
-      aria-label={`${credits} credits`}
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative flex items-center gap-2 rounded-full bg-ink-900 py-1.5 pl-1.5 pr-3.5 text-sm font-medium text-white transition hover:bg-ink-800"
+      aria-label={credits === null ? "Credits" : `${credits} credits`}
     >
       <span className="grid h-6 w-6 place-items-center rounded-full bg-thread-500" aria-hidden="true">
         <span className="h-2.5 w-2.5 rounded-full border-2 border-ink-900" />
       </span>
-      <span className="tabular-nums" aria-hidden="true">
-        {shown}
+      <span className="tabular-nums min-w-[1.25rem]" aria-hidden="true">
+        {loading ? "…" : credits === null ? "—" : shown}
       </span>
       <span className="hidden text-xs font-normal text-ink-300 sm:inline" aria-hidden="true">
         credits
       </span>
-      {delta && (
+      {delta && credits !== null && (
         <span
           key={delta.id}
           aria-hidden="true"
@@ -56,21 +66,103 @@ function CreditsPill({ credits }: { credits: number }) {
           {delta.amount > 0 ? `+${delta.amount}` : `−${Math.abs(delta.amount)}`}
         </span>
       )}
-    </div>
+    </button>
   );
 }
 
-export default function Header({ credits }: HeaderProps) {
+export default function Header() {
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [active, setActive] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+
+  // Auth + credits (realtime)
+  const [userId, setUserId] = useState<string | null>(null);
+  const [credits, setCredits] = useState<number | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const headerRef = useRef<HTMLElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
   const linkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
 
-  // Scroll progress for the measuring tape + "stuck" shadow.
-  // Written straight to the DOM so scrolling never re-renders React.
+  // Load session + profile credits, subscribe to realtime updates
+  useEffect(() => {
+    const supabase = createClient();
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    async function init() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          setUserId(null);
+          setCredits(null);
+          setAuthLoading(false);
+          return;
+        }
+
+        setUserId(user.id);
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("credits")
+          .eq("id", user.id)
+          .single();
+
+        setCredits(profile?.credits ?? 0);
+        setAuthLoading(false);
+
+        // Realtime credit updates for this user
+        channel = supabase
+          .channel(`credits-${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "profiles",
+              filter: `id=eq.${user.id}`,
+            },
+            (payload) => {
+              const next = (payload.new as { credits?: number })?.credits;
+              if (typeof next === "number") setCredits(next);
+            }
+          )
+          .subscribe();
+      } catch {
+        setUserId(null);
+        setCredits(null);
+        setAuthLoading(false);
+      }
+    }
+
+    init();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setUserId(null);
+        setCredits(null);
+        if (channel) {
+          supabase.removeChannel(channel);
+          channel = null;
+        }
+      } else {
+        // Re-init when signing in
+        init();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      if (channel) supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Scroll progress for the measuring tape + "stuck" shadow
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
@@ -130,7 +222,6 @@ export default function Header({ credits }: HeaderProps) {
         return;
       }
       const wasHidden = pill.style.opacity !== "1";
-      // First appearance fades in place instead of sliding from the left edge
       pill.style.transition = wasHidden ? "opacity .25s ease" : "";
       pill.style.width = `${link.offsetWidth}px`;
       pill.style.transform = `translateX(${link.offsetLeft}px)`;
@@ -150,23 +241,34 @@ export default function Header({ credits }: HeaderProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [mobileOpen]);
 
+  async function signOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    setUserId(null);
+    setCredits(null);
+    setMobileOpen(false);
+    router.push("/");
+    router.refresh();
+  }
+
+  const isLoggedIn = !!userId;
+
   return (
     <header ref={headerRef} data-stuck="false" className="site-header sticky top-0 z-50">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
-        <a href="#top" className="shrink-0 rounded-md" aria-label="tryyON home">
+        <Link href="/" className="shrink-0 rounded-md" aria-label="tryyON home">
           <Logo />
-        </a>
+        </Link>
 
-        {/* Desktop navigation */}
+        {/* Desktop nav */}
         <nav
-          aria-label="Main"
-          className="relative hidden items-center rounded-full p-1 md:flex"
+          className="relative hidden items-center gap-1 md:flex"
           onMouseLeave={() => setHovered(null)}
         >
           <span
             ref={pillRef}
+            className="pointer-events-none absolute left-0 top-1/2 h-9 -translate-y-1/2 rounded-full bg-ink-900/[0.06] opacity-0 transition-all duration-300 ease-out"
             aria-hidden="true"
-            className="nav-pill absolute left-0 top-1 bottom-1 rounded-full bg-ink-900/[0.07] opacity-0"
           />
           {NAV.map((item) => (
             <a
@@ -176,14 +278,7 @@ export default function Header({ credits }: HeaderProps) {
                 linkRefs.current[item.id] = el;
               }}
               onMouseEnter={() => setHovered(item.id)}
-              onFocus={() => setHovered(item.id)}
-              onBlur={() => setHovered(null)}
-              aria-current={active === item.id ? "location" : undefined}
-              className={`relative z-10 rounded-full px-4 py-2 text-sm font-medium transition-colors duration-200 ${
-                active === item.id || hovered === item.id
-                  ? "text-ink-900"
-                  : "text-ink-600"
-              }`}
+              className="relative z-10 rounded-full px-3.5 py-2 text-sm font-medium text-ink-600 transition hover:text-ink-900"
             >
               {item.label}
             </a>
@@ -192,14 +287,47 @@ export default function Header({ credits }: HeaderProps) {
 
         {/* Right side */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <CreditsPill credits={credits} />
+          {/* Only show credits when logged in */}
+          {isLoggedIn && (
+            <CreditsPill
+              credits={credits}
+              loading={authLoading}
+              onClick={() => router.push("/studio")}
+            />
+          )}
 
-          <button
-            type="button"
-            className="hidden h-10 items-center justify-center rounded-full bg-ink-900 px-5 text-sm font-semibold text-white transition duration-200 hover:bg-chalk-600 active:scale-[0.97] sm:inline-flex"
-          >
-            Sign in
-          </button>
+          {isLoggedIn ? (
+            <>
+              <Link
+                href="/studio"
+                className="hidden h-10 items-center justify-center rounded-full bg-ink-900 px-5 text-sm font-semibold text-white transition duration-200 hover:bg-chalk-600 active:scale-[0.97] sm:inline-flex"
+              >
+                Studio
+              </Link>
+              <button
+                type="button"
+                onClick={signOut}
+                className="hidden h-10 items-center justify-center rounded-full border border-ink-200 px-4 text-sm font-medium text-ink-700 transition hover:bg-ink-50 sm:inline-flex"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="hidden h-10 items-center justify-center rounded-full bg-ink-900 px-5 text-sm font-semibold text-white transition duration-200 hover:bg-chalk-600 active:scale-[0.97] sm:inline-flex"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/signup"
+                className="hidden h-10 items-center justify-center rounded-full bg-thread-500 px-5 text-sm font-semibold text-ink-950 transition duration-200 hover:bg-thread-400 active:scale-[0.97] md:inline-flex"
+              >
+                Get started
+              </Link>
+            </>
+          )}
 
           <button
             type="button"
@@ -246,12 +374,42 @@ export default function Header({ credits }: HeaderProps) {
                 {item.label}
               </a>
             ))}
-            <button
-              type="button"
-              className="mt-3 h-12 w-full rounded-full bg-ink-900 text-sm font-semibold text-white sm:hidden"
-            >
-              Sign in
-            </button>
+
+            {isLoggedIn ? (
+              <>
+                <Link
+                  href="/studio"
+                  onClick={() => setMobileOpen(false)}
+                  className="mt-3 flex h-12 w-full items-center justify-center rounded-full bg-ink-900 text-sm font-semibold text-white"
+                >
+                  Open studio
+                </Link>
+                <button
+                  type="button"
+                  onClick={signOut}
+                  className="mt-2 flex h-12 w-full items-center justify-center rounded-full border border-ink-200 text-sm font-medium text-ink-700"
+                >
+                  Sign out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  onClick={() => setMobileOpen(false)}
+                  className="mt-3 flex h-12 w-full items-center justify-center rounded-full bg-ink-900 text-sm font-semibold text-white"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/signup"
+                  onClick={() => setMobileOpen(false)}
+                  className="mt-2 flex h-12 w-full items-center justify-center rounded-full bg-thread-500 text-sm font-semibold text-ink-950"
+                >
+                  Get started free
+                </Link>
+              </>
+            )}
           </nav>
         </div>
       </div>

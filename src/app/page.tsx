@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
 import TryOnStudio from "@/components/TryOnStudio";
@@ -10,7 +10,13 @@ import ForBrands from "@/components/ForBrands";
 import Footer from "@/components/Footer";
 
 export default function HomePage() {
-  const [credits, setCredits] = useState(10);
+  const router = useRouter();
+
+  // Landing page is a teaser — any generate attempt requires signup
+  const handleSpend = async () => {
+    router.push("/signup");
+    return false;
+  };
 
   return (
     <div className="min-h-screen bg-ink-50">
@@ -21,14 +27,11 @@ export default function HomePage() {
         Skip to try-on
       </a>
 
-      <Header credits={credits} />
+      <Header />
 
       <main>
         <Hero />
-        <TryOnStudio
-          credits={credits}
-          onSpend={(amount) => setCredits((c) => Math.max(0, c - amount))}
-        />
+        <TryOnStudio credits={0} onSpend={handleSpend} />
         <HowItWorks />
         <Pricing />
         <ForBrands />

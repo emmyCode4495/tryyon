@@ -17,7 +17,7 @@ const TOTAL_MS = STAGE_MS * STAGES.length;
 
 interface TryOnStudioProps {
   credits: number;
-  onSpend: (amount: number) => void;
+  onSpend: (amount: number) => void | Promise<boolean | void>;
 }
 
 export default function TryOnStudio({ credits, onSpend }: TryOnStudioProps) {
@@ -60,8 +60,12 @@ export default function TryOnStudio({ credits, onSpend }: TryOnStudioProps) {
     timers.current.push(
       window.setTimeout(() => setStage(1), STAGE_MS),
       window.setTimeout(() => setStage(2), STAGE_MS * 2),
-      window.setTimeout(() => {
-        onSpend(SNAPSHOT_COST);
+      window.setTimeout(async () => {
+        const ok = await onSpend(SNAPSHOT_COST);
+        if (ok === false) {
+          setIsGenerating(false);
+          return;
+        }
         setResultUrl(personPreview);
         setIsGenerating(false);
       }, TOTAL_MS)
