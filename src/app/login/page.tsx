@@ -11,6 +11,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/studio";
+  const justReset = searchParams.get("reset") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -84,6 +85,11 @@ function LoginForm() {
           </div>
 
           <div className="bg-white rounded-2xl border border-ink-100 shadow-sm p-6 sm:p-8 space-y-5">
+            {justReset && !error && (
+              <div role="status" className="pane-in rounded-xl bg-emerald-50 text-emerald-800 text-sm px-4 py-3">
+                Password updated. Sign in with your new password.
+              </div>
+            )}
             {error && (
               <div className="rounded-xl bg-red-50 text-red-700 text-sm px-4 py-3">
                 {error}
@@ -128,9 +134,17 @@ function LoginForm() {
               </div>
 
               <div>
-                <label htmlFor="password" className="block text-sm font-medium text-ink-700 mb-1.5">
-                  Password
-                </label>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label htmlFor="password" className="block text-sm font-medium text-ink-700">
+                    Password
+                  </label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-xs font-semibold text-thread-600 hover:text-thread-700"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <input
                   id="password"
                   type="password"

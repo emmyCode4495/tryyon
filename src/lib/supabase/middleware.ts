@@ -65,7 +65,7 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
 
-  if (!user && path.startsWith("/studio")) {
+  if (!user && (path.startsWith("/studio") || path.startsWith("/profile"))) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     redirectUrl.searchParams.set("next", path + (request.nextUrl.search || ""));

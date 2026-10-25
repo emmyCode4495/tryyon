@@ -398,6 +398,12 @@ export default function Header() {
               >
                 Studio
               </Link>
+              <Link
+                href="/profile"
+                className="hidden h-10 items-center justify-center rounded-full px-3 text-sm font-medium text-ink-700 transition hover:bg-ink-900/[0.06] md:inline-flex"
+              >
+                Profile
+              </Link>
               <button
                 type="button"
                 onClick={signOut}
@@ -479,6 +485,13 @@ export default function Header() {
                   className="mt-3 flex h-12 w-full items-center justify-center rounded-full bg-ink-900 text-sm font-semibold text-white"
                 >
                   Open studio
+                </Link>
+                <Link
+                  href="/profile"
+                  onClick={() => setMobileOpen(false)}
+                  className="mt-2 flex h-12 w-full items-center justify-center rounded-full bg-ink-100 text-sm font-semibold text-ink-900"
+                >
+                  Profile
                 </Link>
                 <button
                   type="button"
