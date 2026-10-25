@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import Header from "@/components/Header";
 import TryOnStudio from "@/components/TryOnStudio";
-import { CREDIT_PACKS } from "@/lib/credits";
+import RealtimeMirror from "@/components/RealtimeMirror";
+import { CREDIT_PACKS, packPrice } from "@/lib/currency";
+import { useCurrency } from "@/hooks/useCurrency";
 import Logo from "@/components/Logo";
+import { CREDIT_COSTS } from "@/lib/credits";
 
 type Profile = {
   id: string;
@@ -17,12 +19,41 @@ type Profile = {
   plan: string;
 };
 
-export default function StudioPage() {
+type TabId = "tryon" | "mirror" | "profile";
+
+const TABS: { id: TabId; label: string; short: string }[] = [
+  { id: "tryon", label: "Snapshot try-on", short: "Snapshot" },
+  { id: "mirror", label: "Realtime mirror", short: "Mirror" },
+  { id: "profile", label: "Profile", short: "Profile" },
+];
+
+function StudioInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { format, isNigeria, currency, ready: currencyReady } = useCurrency();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showTopUp, setShowTopUp] = useState(false);
   const [paying, setPaying] = useState<string | null>(null);
+
+  const tabParam = searchParams.get("tab") as TabId | null;
+  const initialTab: TabId =
+    tabParam === "mirror" || tabParam === "profile" || tabParam === "tryon"
+      ? tabParam
+      : "tryon";
+  const [tab, setTab] = useState<TabId>(initialTab);
+
+  useEffect(() => {
+    if (tabParam === "mirror" || tabParam === "profile" || tabParam === "tryon") {
+      setTab(tabParam);
+    }
+  }, [tabParam]);
+
+  function goTab(id: TabId) {
+    setTab(id);
+    const url = id === "tryon" ? "/studio" : `/studio?tab=${id}`;
+    router.replace(url, { scroll: false });
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -43,13 +74,22 @@ export default function StudioPage() {
         .eq("id", user.id)
         .single();
 
-      if (data) setProfile(data);
+      if (data) {
+        setProfile(data);
+        try {
+          sessionStorage.setItem(
+            "tryyon_auth",
+            JSON.stringify({ userId: data.id, credits: data.credits })
+          );
+        } catch {
+          /* ignore */
+        }
+      }
       setLoading(false);
     }
 
     load();
 
-    // Realtime credit updates
     const channel = supabase
       .channel("profile-credits")
       .on(
@@ -75,18 +115,30 @@ export default function StudioPage() {
     };
   }, [router]);
 
-  async function handleSpend(amount: number) {
+  async function handleSpend(amount: number, reason = "tryon_snapshot") {
     if (!profile || profile.credits < amount) return false;
 
     const res = await fetch("/api/credits/spend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount, reason: "tryon_snapshot" }),
+      body: JSON.stringify({ amount, reason }),
     });
 
     if (!res.ok) return false;
     const data = await res.json();
-    setProfile((p) => (p ? { ...p, credits: data.credits } : p));
+    setProfile((p) => {
+      if (!p) return p;
+      const next = { ...p, credits: data.credits };
+      try {
+        sessionStorage.setItem(
+          "tryyon_auth",
+          JSON.stringify({ userId: next.id, credits: next.credits })
+        );
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
     return true;
   }
 
@@ -96,7 +148,7 @@ export default function StudioPage() {
       const res = await fetch("/api/flutterwave/initialize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packId }),
+        body: JSON.stringify({ packId, currency }),
       });
       const data = await res.json();
       if (data.payment_link) {
@@ -128,6 +180,13 @@ export default function StudioPage() {
 
   if (!profile) return null;
 
+  const planLabel =
+    profile.plan === "vendor"
+      ? "Vendor"
+      : profile.plan === "shopper"
+        ? "Shopper"
+        : "Free";
+
   return (
     <div className="min-h-screen bg-ink-50">
       <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-ink-100">
@@ -138,6 +197,7 @@ export default function StudioPage() {
 
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={() => setShowTopUp(true)}
               className="relative flex items-center gap-2 rounded-full bg-ink-900 py-1.5 pl-1.5 pr-3.5 text-sm font-medium text-white hover:bg-ink-800 transition"
             >
@@ -151,6 +211,7 @@ export default function StudioPage() {
             </button>
 
             <button
+              type="button"
               onClick={signOut}
               className="text-sm font-medium text-ink-500 hover:text-ink-900 transition px-2"
             >
@@ -160,21 +221,198 @@ export default function StudioPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
-        <div className="mb-8">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+        <div className="mb-6 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-ink-900">
             Your try-on studio
           </h1>
           <p className="mt-1 text-ink-500 text-sm">
             Welcome{profile.full_name ? `, ${profile.full_name}` : ""}. You have{" "}
-            <strong className="text-ink-800">{profile.credits} credits</strong>.
+            <strong className="text-ink-800">{profile.credits} credits</strong>
+            {" · "}
+            <span className="capitalize">{planLabel}</span> plan.
           </p>
         </div>
 
-        <TryOnStudio
-          credits={profile.credits}
-          onSpend={handleSpend}
-        />
+        {/* Tabs */}
+        <div
+          role="tablist"
+          aria-label="Studio sections"
+          className="mb-8 flex gap-1 overflow-x-auto rounded-2xl border border-ink-100 bg-white p-1.5 shadow-sm"
+        >
+          {TABS.map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => goTab(t.id)}
+                className={`flex-1 min-w-[6.5rem] rounded-xl px-3 py-2.5 text-sm font-semibold transition ${
+                  active
+                    ? "bg-ink-900 text-white shadow-sm"
+                    : "text-ink-500 hover:bg-ink-50 hover:text-ink-900"
+                }`}
+              >
+                <span className="sm:hidden">{t.short}</span>
+                <span className="hidden sm:inline">{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab panels */}
+        {tab === "tryon" && (
+          <div role="tabpanel" className="rounded-3xl overflow-hidden border border-ink-100 bg-ink-950">
+            <TryOnStudio
+              credits={profile.credits}
+              plan={profile.plan}
+              onSpend={handleSpend}
+              onCreditsUpdate={(credits) =>
+                setProfile((p) => (p ? { ...p, credits } : p))
+              }
+              hideRealtime
+            />
+          </div>
+        )}
+
+        {tab === "mirror" && (
+          <div role="tabpanel" className="space-y-4">
+            <div className="rounded-2xl border border-ink-100 bg-white px-4 py-3 text-sm text-ink-600">
+              Live camera try-on powered by Decart. Costs{" "}
+              <strong className="text-ink-900">{CREDIT_COSTS.realtime_15s} credits</strong> for a{" "}
+              {15}-second session. Allow camera access when prompted.
+            </div>
+            <RealtimeMirror
+              credits={profile.credits}
+              plan={profile.plan}
+              onSpend={async (amount, reason) => handleSpend(amount, reason)}
+            />
+          </div>
+        )}
+
+        {tab === "profile" && (
+          <div role="tabpanel" className="grid gap-6 lg:grid-cols-5">
+            <div className="lg:col-span-3 rounded-2xl border border-ink-100 bg-white p-6 sm:p-8 shadow-sm">
+              <h2 className="font-display text-xl font-semibold text-ink-900">Account</h2>
+              <dl className="mt-6 space-y-5">
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-ink-400">
+                    Full name
+                  </dt>
+                  <dd className="mt-1 text-ink-900">
+                    {profile.full_name || "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-ink-400">
+                    Email
+                  </dt>
+                  <dd className="mt-1 text-ink-900">{profile.email || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-ink-400">
+                    Plan
+                  </dt>
+                  <dd className="mt-1">
+                    <span className="inline-flex items-center rounded-full bg-ink-100 px-3 py-1 text-sm font-semibold text-ink-800">
+                      {planLabel}
+                    </span>
+                    {profile.plan === "free" && (
+                      <p className="mt-2 text-sm text-ink-500">
+                        Free results include a watermark. Upgrade for clean exports and clips.
+                      </p>
+                    )}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-ink-400">
+                    Credit balance
+                  </dt>
+                  <dd className="mt-1 flex flex-wrap items-center gap-3">
+                    <span className="text-2xl font-bold tabular-nums text-ink-900">
+                      {profile.credits}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowTopUp(true)}
+                      className="rounded-full bg-thread-500 px-4 py-2 text-sm font-semibold text-ink-950 hover:bg-thread-400 transition"
+                    >
+                      Top up
+                    </button>
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="mt-8 border-t border-ink-100 pt-6">
+                <h3 className="text-sm font-semibold text-ink-900">Credit costs</h3>
+                <ul className="mt-3 space-y-2 text-sm text-ink-600">
+                  <li className="flex justify-between gap-4">
+                    <span>Snapshot try-on</span>
+                    <span className="font-medium text-ink-900">
+                      {CREDIT_COSTS.snapshot} credits
+                    </span>
+                  </li>
+                  <li className="flex justify-between gap-4">
+                    <span>5-second clip</span>
+                    <span className="font-medium text-ink-900">
+                      {CREDIT_COSTS.clip} credits
+                    </span>
+                  </li>
+                  <li className="flex justify-between gap-4">
+                    <span>Realtime mirror (15s)</span>
+                    <span className="font-medium text-ink-900">
+                      {CREDIT_COSTS.realtime_15s} credits
+                    </span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="lg:col-span-2 space-y-4">
+              <div className="rounded-2xl border border-ink-100 bg-white p-6 shadow-sm">
+                <h3 className="font-semibold text-ink-900">Quick actions</h3>
+                <div className="mt-4 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => goTab("tryon")}
+                    className="rounded-xl border border-ink-150 px-4 py-3 text-left text-sm font-medium text-ink-800 hover:border-thread-400 hover:bg-thread-50 transition"
+                  >
+                    Open snapshot try-on
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goTab("mirror")}
+                    className="rounded-xl border border-ink-150 px-4 py-3 text-left text-sm font-medium text-ink-800 hover:border-thread-400 hover:bg-thread-50 transition"
+                  >
+                    Open realtime mirror
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowTopUp(true)}
+                    className="rounded-xl border border-ink-150 px-4 py-3 text-left text-sm font-medium text-ink-800 hover:border-thread-400 hover:bg-thread-50 transition"
+                  >
+                    Buy credits
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-ink-900 p-6 text-white">
+                <h3 className="font-semibold">Need more power?</h3>
+                <p className="mt-2 text-sm text-ink-300">
+                  Shopper and Vendor plans unlock more monthly credits and cleaner exports.
+                </p>
+                <Link
+                  href="/#pricing"
+                  className="mt-4 inline-flex rounded-full bg-thread-500 px-4 py-2 text-sm font-semibold text-ink-950 hover:bg-thread-400 transition"
+                >
+                  View plans
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Top-up modal */}
@@ -184,6 +422,7 @@ export default function StudioPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100">
               <h2 className="font-semibold text-ink-900">Top up credits</h2>
               <button
+                type="button"
                 onClick={() => setShowTopUp(false)}
                 className="text-ink-400 hover:text-ink-700 text-xl leading-none"
               >
@@ -191,28 +430,35 @@ export default function StudioPage() {
               </button>
             </div>
             <div className="p-5 space-y-3">
-              {CREDIT_PACKS.map((pack) => (
-                <button
-                  key={pack.id}
-                  onClick={() => startPayment(pack.id)}
-                  disabled={!!paying}
-                  className={`w-full flex items-center justify-between rounded-xl border px-4 py-3.5 text-left transition hover:border-thread-400 ${
-                    "popular" in pack && pack.popular
-                      ? "border-thread-500 bg-thread-50"
-                      : "border-ink-150"
-                  }`}
-                >
-                  <div>
-                    <p className="font-semibold text-ink-900">{pack.label}</p>
-                    <p className="text-xs text-ink-500">
-                      ₦{pack.amountNgn.toLocaleString()}
-                    </p>
-                  </div>
-                  <span className="text-sm font-medium text-thread-600">
-                    {paying === pack.id ? "Redirecting…" : "Buy"}
-                  </span>
-                </button>
-              ))}
+              {currencyReady && (
+                <p className="text-xs text-ink-400 mb-1">
+                  Charged in {isNigeria ? "Nigerian Naira (₦)" : "US Dollars ($)"}
+                </p>
+              )}
+              {CREDIT_PACKS.map((pack) => {
+                const amount = packPrice(pack, isNigeria);
+                return (
+                  <button
+                    key={pack.id}
+                    type="button"
+                    onClick={() => startPayment(pack.id)}
+                    disabled={!!paying}
+                    className={`w-full flex items-center justify-between rounded-xl border px-4 py-3.5 text-left transition hover:border-thread-400 ${
+                      "popular" in pack && pack.popular
+                        ? "border-thread-500 bg-thread-50"
+                        : "border-ink-150"
+                    }`}
+                  >
+                    <div>
+                      <p className="font-semibold text-ink-900">{pack.label}</p>
+                      <p className="text-xs text-ink-500">{format(amount)}</p>
+                    </div>
+                    <span className="text-sm font-medium text-thread-600">
+                      {paying === pack.id ? "Redirecting…" : "Buy"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <p className="px-5 pb-5 text-xs text-ink-400 text-center">
               Secure payment powered by Flutterwave
@@ -221,5 +467,20 @@ export default function StudioPage() {
         </div>
       )}
     </div>
+  );
+}
+
+
+export default function StudioPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-ink-50 flex items-center justify-center">
+          <div className="text-ink-400 text-sm">Loading your studio…</div>
+        </div>
+      }
+    >
+      <StudioInner />
+    </Suspense>
   );
 }

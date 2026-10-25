@@ -76,65 +76,141 @@ export default function Header() {
   const [active, setActive] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
 
-  // Auth + credits (realtime)
-  const [userId, setUserId] = useState<string | null>(null);
-  const [credits, setCredits] = useState<number | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  // Auth + credits — avoid flash of "Sign in" while session loads
+  const [userId, setUserId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = sessionStorage.getItem("tryyon_auth");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { userId?: string };
+      return parsed.userId ?? null;
+    } catch {
+      return null;
+    }
+  });
+  const [credits, setCredits] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = sessionStorage.getItem("tryyon_auth");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { credits?: number };
+      return typeof parsed.credits === "number" ? parsed.credits : null;
+    } catch {
+      return null;
+    }
+  });
+  // If we already restored a user from sessionStorage, don't treat UI as logged-out
+  const [authLoading, setAuthLoading] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return !sessionStorage.getItem("tryyon_auth");
+    } catch {
+      return true;
+    }
+  });
 
   const headerRef = useRef<HTMLElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
   const linkRefs = useRef<Record<string, HTMLAnchorElement | null>>({});
 
+  // Persist lightweight auth snapshot so home nav doesn't flash signed-out
+  function persistAuth(nextUserId: string | null, nextCredits: number | null) {
+    try {
+      if (!nextUserId) {
+        sessionStorage.removeItem("tryyon_auth");
+        return;
+      }
+      sessionStorage.setItem(
+        "tryyon_auth",
+        JSON.stringify({ userId: nextUserId, credits: nextCredits ?? 0 })
+      );
+    } catch {
+      /* private mode etc. */
+    }
+  }
+
   // Load session + profile credits, subscribe to realtime updates
   useEffect(() => {
     const supabase = createClient();
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let cancelled = false;
+
+    async function loadProfile(uid: string) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("credits")
+        .eq("id", uid)
+        .single();
+      const bal = profile?.credits ?? 0;
+      if (cancelled) return;
+      setCredits(bal);
+      persistAuth(uid, bal);
+
+      if (channel) {
+        supabase.removeChannel(channel);
+        channel = null;
+      }
+      channel = supabase
+        .channel(`credits-${uid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "profiles",
+            filter: `id=eq.${uid}`,
+          },
+          (payload) => {
+            const next = (payload.new as { credits?: number })?.credits;
+            if (typeof next === "number") {
+              setCredits(next);
+              persistAuth(uid, next);
+            }
+          }
+        )
+        .subscribe();
+    }
 
     async function init() {
       try {
+        // getSession is fast (local cookies); getUser validates with server
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session?.user) {
+          if (!cancelled) {
+            setUserId(session.user.id);
+            setAuthLoading(false);
+            persistAuth(session.user.id, credits);
+          }
+          await loadProfile(session.user.id);
+        }
+
         const {
           data: { user },
         } = await supabase.auth.getUser();
 
+        if (cancelled) return;
+
         if (!user) {
           setUserId(null);
           setCredits(null);
+          persistAuth(null, null);
           setAuthLoading(false);
           return;
         }
 
         setUserId(user.id);
-
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("credits")
-          .eq("id", user.id)
-          .single();
-
-        setCredits(profile?.credits ?? 0);
         setAuthLoading(false);
-
-        // Realtime credit updates for this user
-        channel = supabase
-          .channel(`credits-${user.id}`)
-          .on(
-            "postgres_changes",
-            {
-              event: "UPDATE",
-              schema: "public",
-              table: "profiles",
-              filter: `id=eq.${user.id}`,
-            },
-            (payload) => {
-              const next = (payload.new as { credits?: number })?.credits;
-              if (typeof next === "number") setCredits(next);
-            }
-          )
-          .subscribe();
+        await loadProfile(user.id);
       } catch {
-        setUserId(null);
-        setCredits(null);
-        setAuthLoading(false);
+        if (!cancelled) {
+          setUserId(null);
+          setCredits(null);
+          persistAuth(null, null);
+          setAuthLoading(false);
+        }
       }
     }
 
@@ -142,24 +218,30 @@ export default function Header() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session?.user) {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT" || !session?.user) {
         setUserId(null);
         setCredits(null);
+        persistAuth(null, null);
+        setAuthLoading(false);
         if (channel) {
           supabase.removeChannel(channel);
           channel = null;
         }
-      } else {
-        // Re-init when signing in
-        init();
+        return;
       }
+      setUserId(session.user.id);
+      setAuthLoading(false);
+      persistAuth(session.user.id, credits);
+      void loadProfile(session.user.id);
     });
 
     return () => {
+      cancelled = true;
       subscription.unsubscribe();
       if (channel) supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Scroll progress for the measuring tape + "stuck" shadow
@@ -246,12 +328,20 @@ export default function Header() {
     await supabase.auth.signOut();
     setUserId(null);
     setCredits(null);
+    try {
+      sessionStorage.removeItem("tryyon_auth");
+    } catch {
+      /* ignore */
+    }
     setMobileOpen(false);
     router.push("/");
     router.refresh();
   }
 
   const isLoggedIn = !!userId;
+  // While verifying session, never flash guest CTAs (layout jump / "Sign in")
+  const showGuestCtas = !authLoading && !isLoggedIn;
+  const showUserCtas = isLoggedIn;
 
   return (
     <header ref={headerRef} data-stuck="false" className="site-header sticky top-0 z-50">
@@ -285,18 +375,22 @@ export default function Header() {
           ))}
         </nav>
 
-        {/* Right side */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* Only show credits when logged in */}
-          {isLoggedIn && (
+        {/* Right side — fixed min width so auth load doesn't distort layout */}
+        <div className="flex min-w-[9.5rem] items-center justify-end gap-2 sm:min-w-[14rem] sm:gap-3">
+          {(showUserCtas || authLoading) && (
             <CreditsPill
-              credits={credits}
-              loading={authLoading}
+              credits={showUserCtas ? credits : null}
+              loading={authLoading && credits === null}
               onClick={() => router.push("/studio")}
             />
           )}
 
-          {isLoggedIn ? (
+          {authLoading && !showUserCtas ? (
+            <>
+              <span className="hidden h-10 w-20 animate-pulse rounded-full bg-ink-100 sm:inline-block" />
+              <span className="hidden h-10 w-24 animate-pulse rounded-full bg-ink-100 md:inline-block" />
+            </>
+          ) : showUserCtas ? (
             <>
               <Link
                 href="/studio"
@@ -312,7 +406,7 @@ export default function Header() {
                 Sign out
               </button>
             </>
-          ) : (
+          ) : showGuestCtas ? (
             <>
               <Link
                 href="/login"
@@ -327,7 +421,7 @@ export default function Header() {
                 Get started
               </Link>
             </>
-          )}
+          ) : null}
 
           <button
             type="button"
@@ -375,7 +469,9 @@ export default function Header() {
               </a>
             ))}
 
-            {isLoggedIn ? (
+            {authLoading && !isLoggedIn ? (
+              <div className="mt-3 h-12 w-full animate-pulse rounded-full bg-ink-100" />
+            ) : isLoggedIn ? (
               <>
                 <Link
                   href="/studio"

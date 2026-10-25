@@ -1,47 +1,13 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { CheckIcon } from "./icons";
+import { useCurrency } from "@/hooks/useCurrency";
+import { PLANS, planPrice } from "@/lib/currency";
+import { createClient } from "@/lib/supabase/client";
 
 type Variant = "free" | "featured" | "dark";
-
-const PLANS: {
-  id: string;
-  name: string;
-  tagline: string;
-  price: string;
-  period?: string;
-  features: string[];
-  cta: string;
-  variant: Variant;
-}[] = [
-  {
-    id: "free",
-    name: "Free",
-    tagline: "Try it out",
-    price: "$0",
-    features: ["10 credits (5 snapshots)", "Watermarked results"],
-    cta: "Current plan",
-    variant: "free",
-  },
-  {
-    id: "shopper",
-    name: "Shopper",
-    tagline: "For everyday use",
-    price: "$6",
-    period: "/month",
-    features: ["200 credits / month", "No watermarks", "Download & share"],
-    cta: "Get Shopper",
-    variant: "featured",
-  },
-  {
-    id: "vendor",
-    name: "Vendor",
-    tagline: "For sellers & creators",
-    price: "$24",
-    period: "/month",
-    features: ["800 credits / month", "Short clips & exports", "Priority generation"],
-    cta: "Get Vendor",
-    variant: "dark",
-  },
-];
 
 const RATES = [
   { label: "Snapshot try-on", cost: 2 },
@@ -63,26 +29,51 @@ const button: Record<Variant, string> = {
   dark: "bg-white text-ink-900 hover:bg-ink-100 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98]",
 };
 
-export default function Pricing() {
-  return (
-    <section id="pricing" className="bg-ink-100 py-24 sm:py-32">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="grid gap-12 lg:grid-cols-2 lg:items-end">
-          <div>
-            <h2 className="font-display text-4xl font-semibold tracking-tight text-ink-900 sm:text-5xl">
-              Simple credit plans
-            </h2>
-            <p className="mt-4 max-w-md text-lg text-ink-600">
-              One credit system for snapshots, clips, and realtime. No surprises.
-            </p>
-          </div>
+function planVariant(id: string): Variant {
+  if (id === "shopper") return "featured";
+  if (id === "vendor") return "dark";
+  return "free";
+}
 
-          {/* Price list, like a tailor's rate card */}
-          <div className="lg:max-w-md lg:justify-self-end lg:w-full">
-            <h3 className="font-display text-lg font-semibold text-ink-900">What credits buy</h3>
-            <ul className="mt-4 space-y-3">
+export default function Pricing() {
+  const { format, isNigeria } = useCurrency();
+  const [loggedIn, setLoggedIn] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setLoggedIn(!!user);
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_e, session) => {
+      setLoggedIn(!!session?.user);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return (
+    <section id="pricing" className="relative scroll-mt-24 bg-ink-50 py-24 sm:py-28">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="text-sm font-semibold uppercase tracking-widest text-chalk-600">
+            Pricing
+          </p>
+          <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight text-ink-900 sm:text-4xl">
+            Start free. Pay when it works.
+          </h2>
+          <p className="mt-4 text-ink-600">
+            Credits power every try-on. Buy a pack or pick a plan — charged in{" "}
+            {isNigeria ? "naira" : "dollars"} based on where you are.
+          </p>
+        </div>
+
+        <div className="mx-auto mt-12 max-w-xl rounded-2xl border border-ink-200 bg-white p-6 shadow-sm">
+          <h3 className="font-display text-base font-semibold text-ink-900">Credit rates</h3>
+          <div className="mt-4">
+            <ul className="space-y-3 text-sm text-ink-700">
               {RATES.map((r) => (
-                <li key={r.label} className="flex items-baseline gap-3 text-ink-700">
+                <li key={r.label} className="flex items-baseline gap-3">
                   <span>{r.label}</span>
                   <span
                     aria-hidden="true"
@@ -99,10 +90,24 @@ export default function Pricing() {
 
         <div className="mt-20 grid gap-6 md:grid-cols-3 md:items-center">
           {PLANS.map((plan) => {
-            const dark = plan.variant === "dark";
+            const variant = planVariant(plan.id);
+            const dark = variant === "dark";
+            const price = planPrice(plan, isNigeria);
+            const priceLabel = format(price);
+
+            // Stay logged in: go to studio (or top-up). Guests: login then studio.
+            const href =
+              plan.id === "free"
+                ? loggedIn
+                  ? "/studio"
+                  : "/signup"
+                : loggedIn
+                  ? "/studio?tab=profile"
+                  : `/login?next=${encodeURIComponent("/studio?tab=profile")}`;
+
             return (
-              <div key={plan.id} className={`rounded-[1.75rem] p-7 sm:p-8 ${card[plan.variant]}`}>
-                {plan.variant === "featured" && (
+              <div key={plan.id} className={`rounded-[1.75rem] p-7 sm:p-8 ${card[variant]}`}>
+                {variant === "featured" && (
                   <span className="absolute -top-3.5 left-8 rounded-full bg-chalk-500 px-3.5 py-1 text-xs font-semibold text-white">
                     Popular
                   </span>
@@ -114,11 +119,11 @@ export default function Pricing() {
 
                 <p className="mt-7 flex items-baseline gap-1">
                   <span className="font-display text-5xl font-semibold tracking-tight">
-                    {plan.price}
+                    {priceLabel}
                   </span>
-                  {plan.period && (
+                  {plan.id !== "free" && (
                     <span className={`text-sm ${dark ? "text-ink-300" : "text-ink-600"}`}>
-                      {plan.period}
+                      /month
                     </span>
                   )}
                 </p>
@@ -134,13 +139,22 @@ export default function Pricing() {
                   ))}
                 </ul>
 
-                <button
-                  type="button"
-                  className={`mt-9 h-12 w-full rounded-full text-sm font-semibold transition duration-300 ${button[plan.variant]}`}
-                  aria-disabled={plan.variant === "free" || undefined}
-                >
-                  {plan.cta}
-                </button>
+                {plan.id === "free" ? (
+                  <button
+                    type="button"
+                    disabled
+                    className={`mt-8 flex h-12 w-full items-center justify-center rounded-full text-sm font-semibold transition duration-200 ${button[variant]}`}
+                  >
+                    {loggedIn ? "Current plan" : "Free to start"}
+                  </button>
+                ) : (
+                  <Link
+                    href={href}
+                    className={`mt-8 flex h-12 w-full items-center justify-center rounded-full text-sm font-semibold transition duration-200 ${button[variant]}`}
+                  >
+                    {loggedIn ? `Continue with ${plan.name}` : `Get ${plan.name}`}
+                  </Link>
+                )}
               </div>
             );
           })}

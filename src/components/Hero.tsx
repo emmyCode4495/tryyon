@@ -48,7 +48,7 @@ export default function Hero() {
             className="rise mt-5 text-sm text-ink-600"
             style={cssVars({ "--d": "0.72s" })}
           >
-            Start with 10 free credits.
+            Start with 2 free credits — enough for one try-on.
           </p>
         </div>
 

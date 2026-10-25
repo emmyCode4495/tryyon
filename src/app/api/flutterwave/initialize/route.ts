@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { CREDIT_PACKS } from "@/lib/credits";
+import { CREDIT_PACKS } from "@/lib/currency";
 
 export async function POST(request: Request) {
   try {
@@ -20,6 +20,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
     }
 
+    const currency = body.currency === "USD" ? "USD" : "NGN";
+    const amount = currency === "USD" ? pack.amountUsd : pack.amountNgn;
+    // Store NGN equivalent in payments table for consistency with existing schema
+    const amountNgn = pack.amountNgn;
+
     const tx_ref = `tryyon_${user.id.slice(0, 8)}_${Date.now()}`;
 
     // Record pending payment
@@ -27,15 +32,15 @@ export async function POST(request: Request) {
     await service.from("payments").insert({
       user_id: user.id,
       tx_ref,
-      amount_ngn: pack.amountNgn,
+      amount_ngn: amountNgn,
       credits_purchased: pack.credits,
       status: "pending",
     });
 
     const payload = {
       tx_ref,
-      amount: pack.amountNgn,
-      currency: "NGN",
+      amount,
+      currency,
       redirect_url: `${process.env.NEXT_PUBLIC_APP_URL}/studio?payment=success`,
       customer: {
         email: user.email,
@@ -50,6 +55,7 @@ export async function POST(request: Request) {
         user_id: user.id,
         pack_id: pack.id,
         credits: pack.credits,
+        currency,
       },
     };
 
