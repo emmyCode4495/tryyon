@@ -4,16 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createDecartClient, models } from "@decartai/sdk";
 import UploadZone from "./UploadZone";
 import { CloseIcon, SparkIcon } from "./icons";
-import { CREDIT_COSTS } from "@/lib/credits";
+import {
+  CREDIT_COSTS,
+  canUseRealtimeMirror,
+} from "@/lib/credits";
+import Link from "next/link";
 
 const SESSION_SECONDS = 15;
-const SESSION_COST = CREDIT_COSTS.realtime_15s;
 
 type SessionState = "idle" | "connecting" | "live" | "ended" | "error";
 
 interface RealtimeMirrorProps {
   credits: number;
   plan?: string;
+  /** Shopper/free can unlock via add-on */
+  mirrorAddon?: boolean;
   onSpend: (amount: number, reason?: string) => Promise<boolean | void>;
   onClose?: () => void;
 }
@@ -21,15 +26,23 @@ interface RealtimeMirrorProps {
 export default function RealtimeMirror({
   credits,
   plan = "free",
+  mirrorAddon = false,
   onSpend,
   onClose,
 }: RealtimeMirrorProps) {
+  const allowed = canUseRealtimeMirror(plan, mirrorAddon);
   const [garmentFile, setGarmentFile] = useState<File | null>(null);
   const [garmentPreview, setGarmentPreview] = useState<string | null>(null);
+  const [fastMode, setFastMode] = useState(false);
   const [state, setState] = useState<SessionState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(SESSION_SECONDS);
   const [status, setStatus] = useState("Upload a garment to start");
+  const [facingUser, setFacingUser] = useState(true);
+
+  const sessionCost = fastMode
+    ? CREDIT_COSTS.realtime_fast_15s
+    : CREDIT_COSTS.realtime_15s;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -72,12 +85,18 @@ export default function RealtimeMirror({
   }, [cleanup]);
 
   const startSession = async () => {
+    if (!allowed) {
+      setError("Realtime mirror is available on the Vendor plan (or with Mirror add-on).");
+      return;
+    }
     if (!garmentFile) {
       setError("Upload a garment first");
       return;
     }
-    if (credits < SESSION_COST) {
-      setError(`You need ${SESSION_COST} credits for a ${SESSION_SECONDS}s live session`);
+    if (credits < sessionCost) {
+      setError(
+        `You need ${sessionCost} credits for a ${SESSION_SECONDS}s ${fastMode ? "fast " : ""}session (you have ${credits})`
+      );
       return;
     }
 
@@ -86,7 +105,10 @@ export default function RealtimeMirror({
     setStatus("Checking credits…");
     setSecondsLeft(SESSION_SECONDS);
 
-    const spent = await onSpend(SESSION_COST, "tryon_realtime");
+    const spent = await onSpend(
+      sessionCost,
+      fastMode ? "tryon_realtime_fast" : "tryon_realtime"
+    );
     if (spent === false) {
       setState("error");
       setError("Could not spend credits");
@@ -99,10 +121,10 @@ export default function RealtimeMirror({
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
-          facingMode: "user",
+          facingMode: facingUser ? "user" : "environment",
           frameRate: model.fps,
-          width: { ideal: model.width },
-          height: { ideal: model.height },
+          width: { ideal: Math.min(model.width, 720) },
+          height: { ideal: Math.min(model.height, 1280) },
         },
       });
       localStreamRef.current = stream;
@@ -119,10 +141,10 @@ export default function RealtimeMirror({
         },
       });
 
-      // SDK connect options: model, onRemoteStream, mirror, initialState — no onError/onDisconnect
-      const rt = await client.realtime.connect(stream, {
+      // Typed for RealTimeClientConnectOptions; speed is optional on newer SDKs
+      const connectOpts = {
         model,
-        mirror: "auto",
+        mirror: (facingUser ? "auto" : false) as "auto" | boolean,
         onRemoteStream: (edited: MediaStream) => {
           if (videoRef.current) {
             videoRef.current.srcObject = edited;
@@ -136,11 +158,14 @@ export default function RealtimeMirror({
           },
           image: garmentFile,
         },
-      });
+        ...(fastMode ? { speed: "fast" as const } : {}),
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rt = await client.realtime.connect(stream, connectOpts as any);
 
       rtClientRef.current = rt;
 
-      // Event listeners live on the client instance (not connect options)
       try {
         rt.on?.("error", (err: unknown) => {
           console.error("[realtime]", err);
@@ -154,11 +179,15 @@ export default function RealtimeMirror({
           }
         });
       } catch {
-        /* older SDK without events — errors still surface via try/catch */
+        /* older SDK */
       }
 
       setState("live");
-      setStatus("Live try-on — move around to see the fit");
+      setStatus(
+        fastMode
+          ? "Live (fast mode) — move to see the fit"
+          : "Live try-on — move around to see the fit"
+      );
 
       timerRef.current = window.setInterval(() => {
         setSecondsLeft((s) => {
@@ -182,18 +211,56 @@ export default function RealtimeMirror({
   };
 
   const canStart =
+    allowed &&
     !!garmentFile &&
-    credits >= SESSION_COST &&
+    credits >= sessionCost &&
     (state === "idle" || state === "ended" || state === "error");
 
+  if (!allowed) {
+    return (
+      <div className="rounded-3xl border border-white/15 bg-ink-900/80 p-6 sm:p-8 text-center">
+        <h3 className="font-display text-xl font-semibold text-white">
+          Realtime mirror
+        </h3>
+        <p className="mt-3 text-sm text-ink-300 max-w-md mx-auto">
+          Live camera try-on is a premium feature. Upgrade to{" "}
+          <strong className="text-white">Vendor</strong> or add the Mirror add-on
+          to unlock 15-second Lucy VTON sessions.
+        </p>
+        <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+          <Link
+            href="/#pricing"
+            className="inline-flex h-12 items-center justify-center rounded-full bg-thread-500 px-6 text-sm font-semibold text-ink-950"
+          >
+            View Vendor plan
+          </Link>
+          <Link
+            href="/studio?tab=profile"
+            className="inline-flex h-12 items-center justify-center rounded-full border border-white/20 px-6 text-sm font-semibold text-white"
+          >
+            Back to profile
+          </Link>
+        </div>
+        <p className="mt-4 text-xs text-ink-500">
+          Standard session {CREDIT_COSTS.realtime_15s} credits · Fast mode{" "}
+          {CREDIT_COSTS.realtime_fast_15s} credits · {SESSION_SECONDS}s cap
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <div className="rounded-3xl border border-white/15 bg-ink-900/80 p-5 sm:p-6">
+    <div className="rounded-3xl border border-white/15 bg-ink-900/80 p-4 sm:p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-display text-xl font-semibold text-white">Realtime mirror</h3>
+          <h3 className="font-display text-xl font-semibold text-white">
+            Realtime mirror
+          </h3>
           <p className="mt-1 text-sm text-ink-300">
-            Live camera try-on · {SESSION_COST} credits · {SESSION_SECONDS}s session
-            {plan === "free" ? " · free plan" : ""}
+            Live camera · {SESSION_SECONDS}s ·{" "}
+            <span className="text-thread-400 font-medium tabular-nums">
+              {credits} credits left
+            </span>
           </p>
         </div>
         {onClose && (
@@ -211,8 +278,33 @@ export default function RealtimeMirror({
         )}
       </div>
 
+      {/* Credits + mode bar */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white tabular-nums">
+          Session cost: {sessionCost} credits
+        </span>
+        <label className="inline-flex items-center gap-2 rounded-full border border-white/15 px-3 py-1 text-xs text-ink-200 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={fastMode}
+            disabled={state === "connecting" || state === "live"}
+            onChange={(e) => setFastMode(e.target.checked)}
+            className="rounded border-ink-400"
+          />
+          Fast mode (2× cost)
+        </label>
+        <button
+          type="button"
+          disabled={state === "connecting" || state === "live"}
+          onClick={() => setFacingUser((v) => !v)}
+          className="rounded-full border border-white/15 px-3 py-1 text-xs text-ink-200 hover:bg-white/10 disabled:opacity-40"
+        >
+          Camera: {facingUser ? "Front" : "Rear"}
+        </button>
+      </div>
+
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <div>
+        <div className="order-2 lg:order-1">
           <UploadZone
             label="Garment"
             placeholder="Upload clothing item"
@@ -236,7 +328,7 @@ export default function RealtimeMirror({
             ) : (
               <>
                 <SparkIcon className="h-4 w-4" />
-                Start live try-on · {SESSION_COST} credits
+                Start live try-on · {sessionCost} credits
               </>
             )}
           </button>
@@ -246,23 +338,34 @@ export default function RealtimeMirror({
           </p>
         </div>
 
-        <div className="relative overflow-hidden rounded-2xl bg-ink-950 aspect-[3/4] sm:aspect-video lg:aspect-[3/4]">
+        {/* Video first on mobile for better camera UX */}
+        <div className="relative order-1 lg:order-2 overflow-hidden rounded-2xl bg-ink-950 aspect-[3/4] max-h-[70vh] mx-auto w-full">
           <video
             ref={videoRef}
             autoPlay
             playsInline
             muted
-            className="absolute inset-0 h-full w-full object-cover scale-x-[-1]"
+            className={`absolute inset-0 h-full w-full object-cover ${
+              facingUser ? "scale-x-[-1]" : ""
+            }`}
           />
           {state !== "live" && state !== "connecting" && (
             <div className="absolute inset-0 grid place-items-center px-6 text-center">
-              <p className="text-sm text-ink-400">Your live try-on stream appears here</p>
+              <p className="text-sm text-ink-400">
+                Your live try-on stream appears here
+              </p>
             </div>
           )}
           {state === "live" && (
-            <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-ink-950/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-              LIVE · {secondsLeft}s
+            <div className="absolute left-3 top-3 right-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 rounded-full bg-ink-950/70 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                LIVE · {secondsLeft}s
+                {fastMode ? " · FAST" : ""}
+              </div>
+              <div className="rounded-full bg-ink-950/70 px-3 py-1.5 text-xs font-semibold text-thread-400 backdrop-blur tabular-nums">
+                {Math.max(0, credits - sessionCost)} after
+              </div>
             </div>
           )}
           {state === "connecting" && (

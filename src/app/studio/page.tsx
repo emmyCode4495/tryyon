@@ -17,6 +17,7 @@ type Profile = {
   full_name: string | null;
   credits: number;
   plan: string;
+  mirror_addon?: boolean;
 };
 
 type TabId = "tryon" | "mirror" | "profile";
@@ -70,7 +71,7 @@ function StudioInner() {
 
       const { data } = await supabase
         .from("profiles")
-        .select("id, email, full_name, credits, plan")
+        .select("id, email, full_name, credits, plan, mirror_addon")
         .eq("id", user.id)
         .single();
 
@@ -114,59 +115,6 @@ function StudioInner() {
       supabase.removeChannel(channel);
     };
   }, [router]);
-
-  // After Flutterwave redirect: ?payment=success&transaction_id=...
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const payment = params.get("payment");
-    const transactionId = params.get("transaction_id") || params.get("id");
-    const txRef = params.get("tx_ref");
-    if (payment !== "success" && !transactionId && !txRef) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const qs = new URLSearchParams();
-        if (transactionId) qs.set("transaction_id", transactionId);
-        if (txRef) qs.set("tx_ref", txRef);
-        const res = await fetch(`/api/flutterwave/verify?${qs.toString()}`);
-        const data = await res.json().catch(() => ({}));
-        if (cancelled) return;
-        if (res.ok && typeof data.credits === "number") {
-          setProfile((p) => (p ? { ...p, credits: data.credits } : p));
-          try {
-            sessionStorage.setItem(
-              "tryyon_auth",
-              JSON.stringify({
-                userId: data.user_id || undefined,
-                credits: data.credits,
-              })
-            );
-          } catch {
-            /* ignore */
-          }
-        }
-      } catch (e) {
-        console.error("[payment verify]", e);
-      } finally {
-        // Clean query string so refresh does not re-hit
-        if (!cancelled) {
-          const url = new URL(window.location.href);
-          url.searchParams.delete("payment");
-          url.searchParams.delete("transaction_id");
-          url.searchParams.delete("id");
-          url.searchParams.delete("tx_ref");
-          url.searchParams.delete("status");
-          window.history.replaceState({}, "", url.pathname + (url.search || ""));
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function handleSpend(amount: number, reason = "tryon_snapshot") {
     if (!profile || profile.credits < amount) return false;
@@ -333,13 +281,18 @@ function StudioInner() {
         {tab === "mirror" && (
           <div role="tabpanel" className="space-y-4">
             <div className="rounded-2xl border border-ink-100 bg-white px-4 py-3 text-sm text-ink-600">
-              Live camera try-on powered by Decart. Costs{" "}
-              <strong className="text-ink-900">{CREDIT_COSTS.realtime_15s} credits</strong> for a{" "}
-              {15}-second session. Allow camera access when prompted.
+              Premium live try-on (Vendor plan or Mirror add-on). Standard{" "}
+              <strong className="text-ink-900">{CREDIT_COSTS.realtime_15s} credits</strong>
+              {" · "}
+              Fast mode{" "}
+              <strong className="text-ink-900">{CREDIT_COSTS.realtime_fast_15s} credits</strong>
+              {" · "}
+              15s cap. Allow camera access when prompted.
             </div>
             <RealtimeMirror
               credits={profile.credits}
               plan={profile.plan}
+              mirrorAddon={!!profile.mirror_addon}
               onSpend={async (amount, reason) => handleSpend(amount, reason)}
             />
           </div>
@@ -448,6 +401,12 @@ function StudioInner() {
                   >
                     Buy credits
                   </button>
+                  <a
+                    href="/merchant"
+                    className="rounded-xl border border-ink-150 px-4 py-3 text-left text-sm font-medium text-ink-800 hover:border-thread-400 hover:bg-thread-50 transition"
+                  >
+                    Merchant embed dashboard
+                  </a>
                 </div>
               </div>
 
