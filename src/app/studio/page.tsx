@@ -115,6 +115,59 @@ function StudioInner() {
     };
   }, [router]);
 
+  // After Flutterwave redirect: ?payment=success&transaction_id=...
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const transactionId = params.get("transaction_id") || params.get("id");
+    const txRef = params.get("tx_ref");
+    if (payment !== "success" && !transactionId && !txRef) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const qs = new URLSearchParams();
+        if (transactionId) qs.set("transaction_id", transactionId);
+        if (txRef) qs.set("tx_ref", txRef);
+        const res = await fetch(`/api/flutterwave/verify?${qs.toString()}`);
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok && typeof data.credits === "number") {
+          setProfile((p) => (p ? { ...p, credits: data.credits } : p));
+          try {
+            sessionStorage.setItem(
+              "tryyon_auth",
+              JSON.stringify({
+                userId: data.user_id || undefined,
+                credits: data.credits,
+              })
+            );
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch (e) {
+        console.error("[payment verify]", e);
+      } finally {
+        // Clean query string so refresh does not re-hit
+        if (!cancelled) {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("payment");
+          url.searchParams.delete("transaction_id");
+          url.searchParams.delete("id");
+          url.searchParams.delete("tx_ref");
+          url.searchParams.delete("status");
+          window.history.replaceState({}, "", url.pathname + (url.search || ""));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   async function handleSpend(amount: number, reason = "tryon_snapshot") {
     if (!profile || profile.credits < amount) return false;
 
