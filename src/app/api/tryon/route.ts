@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CREDIT_COSTS } from "@/lib/credits";
+import { getDecartApiKey } from "@/lib/decart";
 
 const SNAPSHOT_COST = CREDIT_COSTS.snapshot;
 
@@ -26,8 +27,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized — sign in again" }, { status: 401 });
     }
 
-    const apiKey = process.env.DECART_API_KEY?.trim();
-    console.log("[tryon] DECART_API_KEY present:", apiKey);
+    const apiKey = getDecartApiKey();
     if (!apiKey) {
       return NextResponse.json(
         {
@@ -146,10 +146,9 @@ export async function POST(request: Request) {
 
       const decartRes = await fetch(endpoint, {
         method: "POST",
-        headers: {
-          "x-api-key": apiKey,
-          "X-API-KEY": apiKey,
-        },
+        // One header only: header names are case-insensitive, so sending both
+        // casings gets merged into "key, key" and Decart rejects it as invalid.
+        headers: { "X-API-KEY": apiKey },
         body: outbound,
       });
 

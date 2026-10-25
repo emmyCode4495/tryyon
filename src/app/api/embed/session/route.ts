@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { CREDIT_COSTS } from "@/lib/credits";
+import { getDecartApiKey } from "@/lib/decart";
 
 /**
  * Phase 4 embed try-on.
@@ -9,7 +10,7 @@ import { CREDIT_COSTS } from "@/lib/credits";
  */
 export async function POST(request: Request) {
   try {
-    const apiKey = process.env.DECART_API_KEY;
+    const apiKey = getDecartApiKey();
     if (!apiKey) {
       return NextResponse.json({ error: "Try-on not configured" }, { status: 503 });
     }

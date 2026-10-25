@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createDecartClient } from "@decartai/sdk";
+import { getAllowedOrigins, getDecartApiKey } from "@/lib/decart";
 
 /**
  * Mint a short-lived Decart client token for realtime WebRTC sessions.
  * Permanent DECART_API_KEY never leaves the server.
  */
-export async function POST() {
+export async function POST(request: Request) {
   try {
     const supabase = await createClient();
     const {
@@ -17,8 +18,7 @@ export async function POST() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const apiKey = process.env.DECART_API_KEY;
-   
+    const apiKey = getDecartApiKey();
     if (!apiKey) {
       return NextResponse.json(
         { error: "Decart is not configured (missing DECART_API_KEY)" },
@@ -27,16 +27,10 @@ export async function POST() {
     }
 
     const client = createDecartClient({ apiKey });
-    const origin =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : undefined;
-
     const token = await client.tokens.create({
       expiresIn: 300, // 5 minutes — enough to connect
       allowedModels: ["lucy-vton-latest", "lucy-vton-3.6", "lucy-vton-3.5"],
-      ...(origin ? { allowedOrigins: [origin, "http://localhost:3000"] } : {}),
+      allowedOrigins: getAllowedOrigins(request.headers.get("origin")),
     });
 
     return NextResponse.json({
