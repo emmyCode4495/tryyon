@@ -38,6 +38,7 @@ export default function TryOnStudio({
   const [stage, setStage] = useState(0);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [isWatermarked, setIsWatermarked] = useState(false);
+  const [savedToHistory, setSavedToHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRealtime, setShowRealtime] = useState(false);
   const [clipUrl, setClipUrl] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export default function TryOnStudio({
     setIsGenerating(true);
     setStage(0);
     setIsWatermarked(false);
+    setSavedToHistory(false);
     setError(null);
     setResultUrl(null);
 
@@ -114,6 +116,7 @@ export default function TryOnStudio({
         onCreditsUpdate?.(data.credits);
       }
 
+      setSavedToHistory(!!data.historyId);
       let url = data.resultUrl as string;
       const needWatermark = data.watermark ?? isFree;
 
@@ -336,6 +339,12 @@ export default function TryOnStudio({
                       {isWatermarked ? " · watermarked" : ""}
                     </span>
                   </div>
+
+                  {savedToHistory && (
+                    <p className="mt-2 text-xs text-ink-300">
+                      Saved to your History for 24 hours.
+                    </p>
+                  )}
 
                   {isWatermarked && (
                     <p className="mt-2 text-xs text-ink-400">

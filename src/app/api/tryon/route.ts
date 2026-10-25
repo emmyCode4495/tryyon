@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { CREDIT_COSTS } from "@/lib/credits";
 import { getDecartApiKey } from "@/lib/decart";
+import { saveTryonToHistory, purgeExpiredHistory } from "@/lib/history";
 
 const SNAPSHOT_COST = CREDIT_COSTS.snapshot;
 
@@ -287,10 +288,23 @@ async function finishSuccess(
     });
   }
 
+  const watermark = !profile.plan || profile.plan === "free";
+
+  // Keep a copy in the user's 24h history (never blocks or fails the try-on)
+  const historyId = await saveTryonToHistory({
+    userId,
+    source: resultDataUrl,
+    watermarked: watermark,
+    creditsUsed: SNAPSHOT_COST,
+  });
+  // Opportunistically clear this user's expired items after responding
+  after(() => purgeExpiredHistory(userId));
+
   return NextResponse.json({
     resultUrl: resultDataUrl,
     credits: newBalance,
     plan: profile.plan,
-    watermark: !profile.plan || profile.plan === "free",
+    watermark,
+    historyId,
   });
 }

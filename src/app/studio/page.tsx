@@ -6,6 +6,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import TryOnStudio from "@/components/TryOnStudio";
 import RealtimeMirror from "@/components/RealtimeMirror";
+import TryOnHistory from "@/components/TryOnHistory";
 import { CREDIT_PACKS, packPrice } from "@/lib/currency";
 import { useCurrency } from "@/hooks/useCurrency";
 import Logo from "@/components/Logo";
@@ -20,11 +21,12 @@ type Profile = {
   mirror_addon?: boolean;
 };
 
-type TabId = "tryon" | "mirror" | "profile";
+type TabId = "tryon" | "mirror" | "history" | "profile";
 
 const TABS: { id: TabId; label: string; short: string }[] = [
   { id: "tryon", label: "Snapshot try-on", short: "Snapshot" },
   { id: "mirror", label: "Realtime mirror", short: "Mirror" },
+  { id: "history", label: "History", short: "History" },
   { id: "profile", label: "Profile", short: "Profile" },
 ];
 
@@ -39,13 +41,21 @@ function StudioInner() {
 
   const tabParam = searchParams.get("tab") as TabId | null;
   const initialTab: TabId =
-    tabParam === "mirror" || tabParam === "profile" || tabParam === "tryon"
+    tabParam === "mirror" ||
+    tabParam === "history" ||
+    tabParam === "profile" ||
+    tabParam === "tryon"
       ? tabParam
       : "tryon";
   const [tab, setTab] = useState<TabId>(initialTab);
 
   useEffect(() => {
-    if (tabParam === "mirror" || tabParam === "profile" || tabParam === "tryon") {
+    if (
+      tabParam === "mirror" ||
+      tabParam === "history" ||
+      tabParam === "profile" ||
+      tabParam === "tryon"
+    ) {
       setTab(tabParam);
     }
   }, [tabParam]);
@@ -297,6 +307,8 @@ function StudioInner() {
             />
           </div>
         )}
+
+        {tab === "history" && <TryOnHistory onGoTryOn={() => goTab("tryon")} />}
 
         {tab === "profile" && (
           <div role="tabpanel" className="grid gap-6 lg:grid-cols-5">
