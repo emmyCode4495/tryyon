@@ -319,9 +319,8 @@ export default function TryOnStudio({
                           />
                         ))}
                       </div>
-                      <p className="font-display text-xl font-medium text-white">{STAGES[stage]}</p>
-                      <p className="mt-1 text-sm text-ink-300">Powered by Decart</p>
-                    </div>
+                      <p className="font-display text-xl font-medium text-white">{STAGES[stage]}</p>    
+                </div>
                   </div>
                 </div>
               </div>

@@ -18,6 +18,7 @@ export async function POST() {
     }
 
     const apiKey = process.env.DECART_API_KEY;
+   
     if (!apiKey) {
       return NextResponse.json(
         { error: "Decart is not configured (missing DECART_API_KEY)" },
